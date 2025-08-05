@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Список продуктов</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #121212;
+      color: #f0f0f0;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h2 {
+      text-align: center;
+      color: #ffffff;
+    }
+    .hidden { display: none; }
+
+    /* Поля и кнопки */
+    input {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      border: none;
+      border-radius: 8px;
+      background-color: #1f1f1f;
+      color: #fff;
+      font-size: 16px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      margin: 5px 0;
+      border: none;
+      border-radius: 8px;
+      background-color: #3a3a3a;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background-color: #5a5a5a;
+    }
+
+    /* Список продуктов */
+    .product {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #1e1e1e;
+      padding: 10px;
+      margin: 5px 0;
+      border-radius: 8px;
+      flex-wrap: wrap;
+    }
+    .inactive { 
+      text-decoration: line-through; 
+      color: #888; 
+    }
+    .btn-group {
+      display: flex;
+      gap: 5px;
+      width: 100%;
+      margin-top: 8px;
+    }
+    .btn-group button {
+      flex: 1;
+    }
+
+    /* Панели */
+    #adminPanel, #loginForm, #logoutPanel {
+      background: #1e1e1e;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+    }
+
+    @media (min-width: 480px) {
+      .btn-group { width: auto; margin-top: 0; }
+      .product { flex-wrap: nowrap; }
+      .btn-group button { flex: none; }
+    }
+    button i {
+        pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <h2>🛒 Список продуктов</h2>
+
+  <!-- Авторизация -->
+  <div id="loginForm">
+    <input id="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Пароль">
+    <button id="loginBtn">Войти</button>
+  </div>
+  <div id="logoutPanel" class="hidden">
+    <p>Вы вошли как <span id="userEmail"></span></p>
+    <button id="logoutBtn">Выйти</button>
+  </div>
+
+  <!-- Панель администратора -->
+  <div id="adminPanel" class="hidden">
+    <input id="productInput" placeholder="Продукты через запятую">
+    <button id="addBtn">Добавить</button>
+  </div>
+
+  <!-- Список -->
+  <div id="productsList"></div>
+
+
+  <!-- Firebase v10 -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import { 
+      getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+    import { 
+      getDatabase, ref, push, set, onValue, update, remove 
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyCIolz1fzqnsjk02Hfdl4qGWfsW1M6nwJY",
+        authDomain: "ammiteusis.firebaseapp.com",
+        databaseURL: "https://ammiteusis-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "ammiteusis",
+        storageBucket: "ammiteusis.firebasestorage.app",
+        messagingSenderId: "531646494882",
+        appId: "1:531646494882:web:d215c22a0ddc4fbf037ffb"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+
+    const loginForm = document.getElementById("loginForm");
+    const logoutPanel = document.getElementById("logoutPanel");
+    const adminPanel = document.getElementById("adminPanel");
+    const userEmail = document.getElementById("userEmail");
+    const listDiv = document.getElementById("productsList");
+
+    document.getElementById("loginBtn").addEventListener("click", () => {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      signInWithEmailAndPassword(auth, email, password)
+        .catch(err => alert(err.message));
+    });
+
+    document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+
+    document.getElementById("addBtn").addEventListener("click", () => {
+      const input = document.getElementById("productInput").value;
+      if (!input.trim()) return;
+      const products = input.split(",").map(p => p.trim()).filter(Boolean);
+      products.forEach(name => {
+        const newRef = push(ref(db, "products"));
+        set(newRef, { name, active: true });
+      });
+      document.getElementById("productInput").value = "";
+    });
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        userEmail.textContent = user.email;
+        loginForm.classList.add("hidden");
+        logoutPanel.classList.remove("hidden");
+        adminPanel.classList.remove("hidden");
+      } else {
+        loginForm.classList.remove("hidden");
+        logoutPanel.classList.add("hidden");
+        adminPanel.classList.add("hidden");
+      }
+    });
+
+    onValue(ref(db, "products"), (snapshot) => {
+      const products = snapshot.val() || {};
+      renderProducts(products);
+    });
+
+    function renderProducts(products) {
+      listDiv.innerHTML = "";
+      Object.entries(products).forEach(([id, product]) => {
+        const div = document.createElement("div");
+        div.className = "product " + (product.active ? "" : "inactive");
+
+        const nameDiv = document.createElement("div");
+        nameDiv.textContent = product.name;
+
+        div.appendChild(nameDiv);
+
+        if (auth.currentUser) {
+          const btnGroup = document.createElement("div");
+          btnGroup.className = "btn-group";
+
+          const toggleBtn = document.createElement("button");
+            toggleBtn.innerHTML = product.active 
+            ? '<i class="fa-solid fa-ban"></i>'        // 🚫 Деактивировать
+            : '<i class="fa-solid fa-check"></i>';     // ✔️ Активировать
+          toggleBtn.addEventListener("click", () => {
+            update(ref(db, "products/" + id), { active: !product.active });
+          });
+
+          const delBtn = document.createElement("button");
+          delBtn.innerHTML = '<i class="fa-solid fa-trash"></i>'; // 🗑️ Удалить
+          delBtn.addEventListener("click", () => {
+            remove(ref(db, "products/" + id));
+          });
+
+          btnGroup.appendChild(toggleBtn);
+          btnGroup.appendChild(delBtn);
+          div.appendChild(btnGroup);
+        }
+        listDiv.appendChild(div);
+      });
+    }
+  </script>
+</body>
+</html>
